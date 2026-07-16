@@ -9,9 +9,18 @@ A command-line tool that analyzes a single bell WAV sample and reports its spect
 - Skips a configurable attack transient
 - Averages the magnitude spectrum over the decay portion
 - Detects spectral peaks with configurable prominence, distance, and smoothing
+  (defaults tuned for inharmonic bell partials)
 - Maps each peak to the nearest 12-TET note and reports cent deviation
 - Optional spectrogram + spectrum visualization with PNG export
 - Headless operation for CI/automation
+
+## Defaults
+
+- FFT size: `16384` samples (~2.93 Hz bin spacing at 48 kHz)
+- Peak prominence: `0.005`
+- Peak distance: `20` bins (~59 Hz at 48 kHz with default FFT)
+- Spectrum plot floor: `-50` dB
+- Spectrogram floor: `-144` dB (24-bit dynamic range)
 
 ## Installation
 

@@ -68,14 +68,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--prominence",
         type=float,
-        default=0.01,
-        help="Minimum peak prominence in normalized magnitude units (default: 0.01).",
+        default=0.005,
+        help="Minimum peak prominence in normalized magnitude units (default: 0.005).",
     )
     parser.add_argument(
         "--distance",
         type=int,
-        default=50,
-        help="Minimum number of bins between peaks (default: 50).",
+        default=20,
+        help="Minimum number of bins between peaks (default: 20).",
     )
     parser.add_argument(
         "--smoothing-window",
@@ -160,6 +160,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=-50.0,
         help="Minimum dB value shown on the averaged spectrum plot "
              "(default: -50.0).",
+    )
+    parser.add_argument(
+        "--spec-floor",
+        type=float,
+        default=-144.0,
+        help="Minimum dB value used for the spectrogram color scale "
+             "(default: -144.0, matching 24-bit dynamic range).",
     )
     return parser.parse_args(argv)
 
@@ -439,12 +446,16 @@ def plot_analysis(
     ax_spec = axes[0]
     y_max = min(args.max_freq, sr / 2.0)
     freq_mask = spec_freqs <= y_max
+    spec_floor_db = float(args.spec_floor)
+    spec_db_plot = np.maximum(spec_db, spec_floor_db)
     im = ax_spec.pcolormesh(
         spec_times,
         spec_freqs[freq_mask],
-        spec_db[freq_mask, :],
+        spec_db_plot[freq_mask, :],
         shading="gouraud",
         cmap="magma",
+        vmin=spec_floor_db,
+        vmax=np.max(spec_db_plot),
     )
     ax_spec.set_ylim(0, y_max)
     ax_spec.set_xlabel("Time (s)")
