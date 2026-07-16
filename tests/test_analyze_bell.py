@@ -12,6 +12,7 @@ import csv
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -313,6 +314,170 @@ def test_spectrogram_alias_enables_plotting() -> None:
     ])
     assert result.returncode == 0, result.stderr
     assert png_path.exists()
+
+
+def test_config_loading_changes_defaults(tmp_path: Path) -> None:
+    config_path = tmp_path / "test_config.ini"
+    config_path.write_text(
+        "[analysis]\nmin_freq = 500.0\n[visualization]\nn_labels = 3\n[output]\nformat = table\n",
+        encoding="utf-8",
+    )
+    result = run_command([
+        sys.executable,
+        str(ANALYZE_BELL),
+        str(SAMPLE_PATH),
+        "--config",
+        str(config_path),
+        "--attack-skip-ms",
+        "60",
+    ])
+    assert result.returncode == 0, result.stderr
+    # With min_freq=500, the 440 Hz fundamental should not appear.
+    assert "440" not in result.stdout
+    assert "A4" not in result.stdout
+    # Output should be in table format (spaces between columns, no commas).
+    assert "," not in result.stdout
+
+
+def test_cli_overrides_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "test_config.ini"
+    config_path.write_text(
+        "[analysis]\nmin_freq = 500.0\n",
+        encoding="utf-8",
+    )
+    result = run_command([
+        sys.executable,
+        str(ANALYZE_BELL),
+        str(SAMPLE_PATH),
+        "--config",
+        str(config_path),
+        "--min-freq",
+        "100.0",
+        "--attack-skip-ms",
+        "60",
+    ])
+    assert result.returncode == 0, result.stderr
+    # CLI --min-freq 100 overrides config min_freq=500, so 440 Hz appears.
+    assert "440" in result.stdout or "A4" in result.stdout
+
+
+def test_missing_config_returns_error() -> None:
+    result = run_command([
+        sys.executable,
+        str(ANALYZE_BELL),
+        str(SAMPLE_PATH),
+        "--config",
+        str(PROJECT_ROOT / "nonexistent_config.ini"),
+    ])
+    assert result.returncode == 1
+    assert "config file not found" in result.stderr.lower()
+
+
+def test_no_config_uses_hardcoded_defaults() -> None:
+    # Run from a temp directory with no analyze_bell.ini nearby.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ANALYZE_BELL),
+                str(SAMPLE_PATH),
+                "--attack-skip-ms",
+                "60",
+            ],
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
+            env={k: v for k, v in os.environ.items() if k not in ("PYTHONHOME", "UV_INTERNAL__PYTHONHOME")},
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        # Hardcoded defaults should still detect the 440 Hz fundamental.
+        assert "440" in result.stdout or "A4" in result.stdout
+
+
+def test_save_config_writes_valid_file(tmp_path: Path) -> None:
+    config_path = tmp_path / "saved_config.ini"
+    result = run_command([
+        sys.executable,
+        str(ANALYZE_BELL),
+        "--save-config",
+        str(config_path),
+    ])
+    assert result.returncode == 0, result.stderr
+    assert config_path.exists()
+
+    text = config_path.read_text(encoding="utf-8")
+    assert "[analysis]" in text
+    assert "[visualization]" in text
+    assert "[output]" in text
+    assert "n_labels = 7" in text
+    assert "prominence = 0.005" in text
+
+    # Verify the saved config can be re-loaded.
+    result2 = run_command([
+        sys.executable,
+        str(ANALYZE_BELL),
+        str(SAMPLE_PATH),
+        "--config",
+        str(config_path),
+        "--attack-skip-ms",
+        "60",
+    ])
+    assert result2.returncode == 0, result2.stderr
+
+
+def test_n_labels_does_not_raise() -> None:
+    png_path = PROJECT_ROOT / "samples" / "n_labels_test.png"
+    if png_path.exists():
+        png_path.unlink()
+
+    result = run_command([
+        sys.executable,
+        str(ANALYZE_BELL),
+        str(SAMPLE_PATH),
+        "--plot-save",
+        str(png_path),
+        "--no-show",
+        "--n-labels",
+        "3",
+        "--attack-skip-ms",
+        "60",
+    ])
+    assert result.returncode == 0, result.stderr
+    assert png_path.exists()
+    assert png_path.stat().st_size > 0
+
+
+def test_public_functions_have_docstrings() -> None:
+    import inspect
+    import analyze_bell as ab
+
+    public_names = [
+        "config_defaults",
+        "load_config",
+        "parse_args",
+        "load_audio",
+        "skip_attack",
+        "compute_mean_spectrum",
+        "compute_stft",
+        "smooth_spectrum",
+        "detect_peaks",
+        "frequency_to_note",
+        "format_peaks",
+        "derive_plot_save_path",
+        "write_csv",
+        "write_table",
+        "plot_analysis",
+        "save_config",
+        "main",
+    ]
+    for name in public_names:
+        obj = getattr(ab, name)
+        doc = inspect.getdoc(obj)
+        assert doc, f"{name} is missing a docstring"
+        assert "Args:" in doc or "Returns:" in doc or "Raises:" in doc, (
+            f"{name} docstring missing Args/Returns/Raises"
+        )
 
 
 if __name__ == "__main__":

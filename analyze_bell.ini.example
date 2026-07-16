@@ -1,0 +1,53 @@
+# Example configuration for analyze_bell.py
+# Copy this file to analyze_bell.ini in your working directory, or pass it with
+# --config /path/to/file.ini. CLI flags override values in this file.
+
+[analysis]
+; Duration to skip at the start of the file, in milliseconds.
+; This removes the noisy attack transient before analysis.
+attack_skip_ms = 100.0
+
+; Minimum and maximum peak frequencies to report, in Hz.
+min_freq = 50.0
+max_freq = 8000.0
+
+; Minimum peak prominence in normalized magnitude units.
+; Increase this value to suppress noise; decrease it to catch quiet partials.
+prominence = 0.005
+
+; Minimum number of bins between detected peaks.
+; Tune downward for bells with closely spaced inharmonic partials.
+distance = 20
+
+; Window length for Savitzky-Golay smoothing. Must be an odd integer >= 3.
+; Set to 1 or 0 to disable smoothing.
+smoothing_window = 11
+
+; FFT size per analysis frame and hop size between frames, in samples.
+; Larger FFT sizes give finer frequency resolution but require longer audio.
+fft_size = 16384
+hop_size = 2048
+
+; Maximum number of peaks to report. Leave blank for no limit.
+peak_count =
+
+[visualization]
+; STFT parameters for the spectrogram, in samples.
+spec_nperseg = 4096
+spec_noverlap = 3072
+spec_nfft = 4096
+
+; Minimum dB value shown on the averaged spectrum plot.
+spectrum_floor = -50.0
+
+; Minimum dB value used for the spectrogram color scale.
+; -144 dB matches the theoretical dynamic range of 24-bit PCM.
+spec_floor = -144.0
+
+; Number of strongest peaks to label on the spectrum plot.
+; Labels alternate above and below the peak markers to reduce overlap.
+n_labels = 7
+
+[output]
+; Default output format: csv or table.
+format = csv

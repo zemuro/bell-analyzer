@@ -1,6 +1,6 @@
 # Bell Sample Overtone Analyzer
 
-A command-line tool that analyzes a single bell WAV sample and reports its spectral overtones as CSV or a formatted table. Phase 02 adds optional matplotlib visualization: a spectrogram of the decay segment and a spectrum plot with detected partials labeled.
+A command-line tool that analyzes a single bell WAV sample and reports its spectral overtones as CSV or a formatted table. It also provides optional matplotlib visualization: a spectrogram of the decay segment and a spectrum plot with detected partials labeled.
 
 ## Features
 
@@ -9,75 +9,80 @@ A command-line tool that analyzes a single bell WAV sample and reports its spect
 - Skips a configurable attack transient
 - Averages the magnitude spectrum over the decay portion
 - Detects spectral peaks with configurable prominence, distance, and smoothing
-  (defaults tuned for inharmonic bell partials)
 - Maps each peak to the nearest 12-TET note and reports cent deviation
 - Optional spectrogram + spectrum visualization with PNG export
 - Headless operation for CI/automation
+- INI configuration file support with CLI overrides
+- Bilingual documentation (English / Russian)
 
-## Defaults
-
-- FFT size: `16384` samples (~2.93 Hz bin spacing at 48 kHz)
-- Peak prominence: `0.005`
-- Peak distance: `20` bins (~59 Hz at 48 kHz with default FFT)
-- Spectrum plot floor: `-50` dB
-- Spectrogram floor: `-144` dB (24-bit dynamic range)
-
-## Installation
+## Quick start
 
 ```bash
 python -m venv venv
 venv\Scripts\pip install -r requirements.txt
-```
 
-## Usage
-
-### Basic analysis
-
-```bash
-# Print CSV to stdout (default FFT size is 16384)
+# Basic analysis
 python analyze_bell.py samples/bell.wav
 
-# Write CSV file, skip first 150 ms
-python analyze_bell.py samples/bell.wav --output peaks.csv --attack-skip-ms 150
-
-# Formatted table with a narrower frequency range
-python analyze_bell.py samples/bell.wav --min-freq 200 --max-freq 4000 --prominence 0.02 --format table
-
-# Use a smaller FFT for faster analysis
-python analyze_bell.py samples/bell.wav --fft-size 8192 --hop-size 2048
+# Save a visualization PNG
+python analyze_bell.py samples/bell.wav --plot-save --no-show --peak-count 12
 ```
 
-### Visualization
+## Example output
+
+```csv
+peak_number,frequency_hz,amplitude_percent,note_name,deviation_cents
+1,366.2,100.0,F#4,-17.8
+2,890.6,81.6,A5,+20.8
+3,805.7,60.2,G5,+47.2
+4,1517.6,44.6,F#6,+43.4
+```
+
+## Configuration
+
+Copy `analyze_bell.ini.example` to `analyze_bell.ini` and edit the values. CLI flags always override config values, and config values override hardcoded defaults.
 
 ```bash
-# Open an interactive matplotlib window (blocking)
-python analyze_bell.py samples/bell.wav --visualize
+# Save the current effective configuration for editing
+python analyze_bell.py --save-config my_config.ini
 
-# Save a PNG without blocking; CSV is still printed
-python analyze_bell.py samples/bell.wav --plot-save bell_report.png --no-show
-
-# Save a PNG with the default filename (<input_stem>_bell_analysis.png)
-python analyze_bell.py samples/bell.wav --plot-save --no-show
-
-# Save a PNG and suppress the text output
-python analyze_bell.py samples/bell.wav --plot-save --no-show --quiet
-
-# Limit the number of reported peaks
-python analyze_bell.py samples/bell.wav --peak-count 12 --max-freq 6000
-
-# Adjust the spectrum plot floor (default -50 dB)
-python analyze_bell.py samples/bell.wav --plot-save --no-show --spectrum-floor -60
+# Use a custom config file
+python analyze_bell.py samples/bell.wav --config my_config.ini
 ```
 
-## Tests
+See [`docs/config.md`](docs/config.md) for the full configuration reference.
 
-```bash
-venv\Scripts\python -m pytest tests/test_analyze_bell.py -v
-```
+## Documentation
 
-## Project Structure
+- [`docs/usage.md`](docs/usage.md) — CLI flag reference and examples
+- [`docs/config.md`](docs/config.md) — configuration file reference
+- [`docs/development.md`](docs/development.md) — theory of operation and contribution guidelines
+- [`README.ru.md`](README.ru.md) — русская версия
 
-- `analyze_bell.py` — main analyzer CLI
-- `tests/generate_test_sample.py` — synthetic bell fixture generator
-- `tests/test_analyze_bell.py` — pytest test suite
-- `plan/` — project plan, reviews, and implementation reports
+## Contributing
+
+1. Open an issue to discuss large changes.
+2. Fork the repository and create a feature branch.
+3. Add tests for new behavior and ensure `pytest` passes.
+4. Update both English and Russian user-facing documentation.
+5. Submit a pull request.
+
+## Troubleshooting
+
+**No peaks reported**
+- Lower `--prominence` or reduce `--distance` to detect quieter or closer partials.
+- Make sure `--min-freq` and `--max-freq` include the range of interest.
+
+**Attack skip too long**
+- Reduce `--attack-skip-ms` or use a longer input file.
+
+**PNG is blank / labels overlap**
+- Use `--n-labels` to limit the number of annotated peaks.
+- Adjust `--spectrum-floor` or `--spec-floor`.
+
+**Matplotlib backend error in headless environment**
+- Always use `--no-show` with `--plot-save`.
+
+## License
+
+This project is provided as-is for analysis and research. See the repository for license details.
