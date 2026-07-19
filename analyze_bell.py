@@ -17,12 +17,18 @@ from __future__ import annotations
 import argparse
 import configparser
 import csv
+import io
 import sys
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 from scipy.signal import find_peaks, savgol_filter, stft
+
+try:
+    import mido
+except ImportError:
+    mido = None
 
 
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -580,6 +586,10 @@ def format_peaks(
     freqs: np.ndarray,
     spectrum: np.ndarray,
     peak_count: int | None = None,
+    spec_db: np.ndarray | None = None,
+    spec_freqs: np.ndarray | None = None,
+    spec_times: np.ndarray | None = None,
+    spec_floor: float = -144.0,
 ) -> list[dict[str, object]]:
     """Build a list of peak records sorted by descending amplitude.
 
@@ -588,11 +598,15 @@ def format_peaks(
         freqs: Frequency axis.
         spectrum: Magnitude spectrum used for amplitude ranking.
         peak_count: Optional maximum number of peaks to return.
+        spec_db: STFT spectrogram magnitude in dB.
+        spec_freqs: STFT frequency axis.
+        spec_times: STFT time axis.
+        spec_floor: Spectrogram noise floor.
 
     Returns:
         List of peak dictionaries with keys ``peak_number``,
-        ``frequency_hz``, ``amplitude_percent``, ``note_name``, and
-        ``deviation_cents``.
+        ``frequency_hz``, ``amplitude_db``, ``duration_percent``, 
+        ``note_name``, and ``deviation_cents``.
     """
     if len(peaks) == 0:
         return []
@@ -603,18 +617,45 @@ def format_peaks(
     sorted_mags = peak_mags[sorted_order]
     max_mag = sorted_mags[0]
 
+    durations_sec = []
+    
+    # Calculate durations if STFT data is available
+    if spec_db is not None and spec_freqs is not None and spec_times is not None:
+        for peak_idx in sorted_peaks:
+            peak_hz = freqs[peak_idx]
+            # Find closest freq bin in STFT
+            bin_idx = np.argmin(np.abs(spec_freqs - peak_hz))
+            time_series = spec_db[bin_idx, :]
+            
+            # Find the last time index where magnitude > spec_floor + margin
+            threshold = spec_floor + 5.0  # 5dB above floor
+            above_thresh = np.where(time_series > threshold)[0]
+            if len(above_thresh) > 0:
+                durations_sec.append(spec_times[above_thresh[-1]])
+            else:
+                durations_sec.append(0.0)
+    else:
+        durations_sec = [0.0] * len(sorted_peaks)
+
+    max_duration = max(durations_sec) if durations_sec and max(durations_sec) > 0 else 1.0
+
     rows: list[dict[str, object]] = []
     for rank, peak_idx in enumerate(sorted_peaks, start=1):
         if peak_count is not None and rank > peak_count:
             break
         frequency = float(freqs[peak_idx])
-        amplitude_percent = 100.0 * sorted_mags[rank - 1] / max_mag
+        # Calculate amplitude in dB relative to loudest peak
+        amplitude_db = 20.0 * np.log10(sorted_mags[rank - 1] / max_mag)
+        
+        duration_percent = 100.0 * (durations_sec[rank - 1] / max_duration)
+        
         note_name, deviation_cents = frequency_to_note(frequency)
         rows.append(
             {
                 "peak_number": rank,
                 "frequency_hz": frequency,
-                "amplitude_percent": round(amplitude_percent, 1),
+                "amplitude_db": round(amplitude_db, 1),
+                "duration_percent": round(duration_percent, 1),
                 "note_name": note_name,
                 "deviation_cents": round(deviation_cents, 1),
             }
@@ -623,33 +664,36 @@ def format_peaks(
 
 
 def derive_plot_save_path(input_path: Path, plot_save_arg: str | None) -> Path:
-    """Return the PNG path to use when --plot-save is provided.
-
+    """Returns the default plot save path based on the input audio file.
+    
     Args:
         input_path: Path to the input audio file.
-        plot_save_arg: Value passed to ``--plot-save``, or the empty string
-            when the flag is used without a value.
-
+        plot_save_arg: Value passed to `--plot-save`.
+        
     Returns:
         Resolved PNG output path.
     """
     if plot_save_arg:
         return Path(plot_save_arg)
-    stem = input_path.stem
-    return Path(f"{stem}_bell_analysis.png")
+    return input_path.parent / f"{input_path.stem}_bell_analysis.png"
 
 
-def write_csv(rows: list[dict[str, object]], output: Path | None) -> None:
+def write_csv(rows: list[dict[str, object]], output: Path | None, input_path: Path | None = None) -> None:
     """Write peak records as CSV to a file or stdout.
 
     Args:
         rows: List of peak dictionaries.
-        output: Output file path, or ``None`` to write to stdout.
+        output: Output file path, or ``None`` to write to stdout/default path.
+        input_path: Input file path to derive default output path.
     """
+    if output is None and input_path is not None:
+        output = input_path.parent / f"{input_path.stem}_bell_analysis.csv"
+
     fieldnames = [
         "peak_number",
         "frequency_hz",
-        "amplitude_percent",
+        "amplitude_db",
+        "duration_percent",
         "note_name",
         "deviation_cents",
     ]
@@ -661,7 +705,8 @@ def write_csv(rows: list[dict[str, object]], output: Path | None) -> None:
             formatted = {
                 "peak_number": row["peak_number"],
                 "frequency_hz": f"{row['frequency_hz']:.1f}",
-                "amplitude_percent": f"{row['amplitude_percent']:.1f}",
+                "amplitude_db": f"{row['amplitude_db']:.1f}",
+                "duration_percent": f"{row['duration_percent']:.1f}",
                 "note_name": row["note_name"],
                 "deviation_cents": f"{row['deviation_cents']:+.1f}",
             }
@@ -674,17 +719,22 @@ def write_csv(rows: list[dict[str, object]], output: Path | None) -> None:
             write_to_fileobj(f)
 
 
-def write_table(rows: list[dict[str, object]], output: Path | None) -> None:
+def write_table(rows: list[dict[str, object]], output: Path | None, input_path: Path | None = None) -> None:
     """Write peak records as an aligned table to a file or stdout.
 
     Args:
         rows: List of peak dictionaries.
-        output: Output file path, or ``None`` to write to stdout.
+        output: Output file path, or ``None`` to write to stdout/default path.
+        input_path: Input file path to derive default output path.
     """
+    if output is None and input_path is not None:
+        output = input_path.parent / f"{input_path.stem}_bell_analysis.txt"
+        
     headers = [
         "peak_number",
         "frequency_hz",
-        "amplitude_percent",
+        "amplitude_db",
+        "duration_percent",
         "note_name",
         "deviation_cents",
     ]
@@ -694,7 +744,8 @@ def write_table(rows: list[dict[str, object]], output: Path | None) -> None:
             [
                 str(row["peak_number"]),
                 f"{row['frequency_hz']:.1f}",
-                f"{row['amplitude_percent']:.1f}",
+                f"{row['amplitude_db']:.1f}",
+                f"{row['duration_percent']:.1f}",
                 str(row["note_name"]),
                 f"{row['deviation_cents']:+.1f}",
             ]
@@ -808,14 +859,12 @@ def plot_analysis(
         labeled_rows = sorted(labeled_rows, key=lambda r: r["frequency_hz"])
 
         for idx, row in enumerate(labeled_rows):
-            if row["amplitude_percent"] < 5.0:
-                continue
             x = row["frequency_hz"]
             y = max(float(np.interp(x, freqs, spectrum_db)), floor_db)
             label = (
                 f"{row['frequency_hz']:.1f} Hz\n"
                 f"{row['note_name']} {row['deviation_cents']:+.1f} c\n"
-                f"{row['amplitude_percent']:.1f}%"
+                f"{row['amplitude_db']:.1f} dB"
             )
             # Stagger labels vertically and horizontally to reduce overlap.
             offsets = [(0, 14), (0, 24), (0, -14), (0, -24)]
@@ -904,6 +953,166 @@ def save_config(args: argparse.Namespace) -> Path:
     return path
 
 
+def generate_midi_bytes(rows: list[dict[str, object]], max_duration_sec: float = 4.0) -> bytes | None:
+    """
+    Generates a standard MIDI file (as bytes) from the analyzed peaks.
+    Frequencies are mapped to 12-TET notes.
+    Amplitudes (in dB) are mapped to velocities (0 dB = 127).
+    Durations (%) are mapped to seconds relative to max_duration_sec.
+    """
+    if mido is None:
+        return None
+        
+    mid = mido.MidiFile()
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+    
+    events = []
+    
+    for row in rows:
+        freq = float(row["frequency_hz"])
+        note = int(round(69 + 12 * np.log2(freq / 440.0)))
+        note = max(0, min(127, note))
+        
+        amp_db = float(row["amplitude_db"])
+        vel = int(127 + (amp_db * (127 / 60.0)))
+        vel = max(1, min(127, vel))
+        
+        duration_pct = float(row["duration_percent"])
+        duration_sec = (duration_pct / 100.0) * max_duration_sec
+        
+        events.append({'type': 'on', 'time_sec': 0.0, 'note': note, 'velocity': vel})
+        events.append({'type': 'off', 'time_sec': duration_sec, 'note': note, 'velocity': 0})
+        
+    events.sort(key=lambda x: (x['time_sec'], 0 if x['type'] == 'on' else 1))
+    
+    ticks_per_sec = 960
+    last_time = 0.0
+    for ev in events:
+        delta_sec = ev['time_sec'] - last_time
+        delta_ticks = int(round(delta_sec * ticks_per_sec))
+        last_time = ev['time_sec']
+        
+        msg_type = 'note_on' if ev['type'] == 'on' else 'note_off'
+        track.append(mido.Message(msg_type, note=ev['note'], velocity=ev['velocity'], time=delta_ticks))
+        
+    out_buf = io.BytesIO()
+    mid.save(file=out_buf)
+    return out_buf.getvalue()
+
+
+def generate_pdf_bytes(
+    data: np.ndarray,
+    sr: int,
+    peaks: np.ndarray,
+    spectrum: np.ndarray,
+    freqs: np.ndarray,
+    rows: list[dict[str, object]],
+    n_labels: int,
+    spec_db: np.ndarray,
+    spec_times: np.ndarray,
+    spec_freqs: np.ndarray,
+    spec_floor: float,
+    spectrum_floor: float,
+    max_freq: float,
+    pdf_dpi: int = 150,
+    filename: str = "",
+) -> bytes:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
+
+    fig = plt.figure(figsize=(16, 9))
+    gs = GridSpec(2, 2, width_ratios=[3, 1])
+
+    # --- Top Left subplot: spectrogram ---
+    ax_spec = fig.add_subplot(gs[0, 0])
+    y_max = min(max_freq, sr / 2.0)
+    freq_mask = spec_freqs <= y_max
+    spec_db_plot = np.maximum(spec_db, spec_floor)
+    im = ax_spec.pcolormesh(
+        spec_times,
+        spec_freqs[freq_mask],
+        spec_db_plot[freq_mask, :],
+        shading="gouraud",
+        cmap="magma",
+        vmin=spec_floor,
+        vmax=np.max(spec_db_plot),
+        rasterized=True,
+    )
+    ax_spec.set_ylim(0, y_max)
+    ax_spec.set_xlabel("Time (s)")
+    ax_spec.set_ylabel("Frequency (Hz)")
+    ax_spec.set_title("STFT Spectrogram (decay segment)")
+    fig.colorbar(im, ax=ax_spec, label="Magnitude (dB)")
+
+    # --- Bottom Left subplot: averaged spectrum with peaks ---
+    ax_mag = fig.add_subplot(gs[1, 0])
+    spectrum_db = 20.0 * np.log10(np.maximum(spectrum, 0.0) + 1e-12)
+    spectrum_db_plot = np.maximum(spectrum_db, spectrum_floor)
+    ax_mag.plot(freqs, spectrum_db_plot, color="steelblue", linewidth=0.8)
+
+    if len(peaks) > 0:
+        peak_freqs = freqs[peaks]
+        peak_mags = np.maximum(spectrum_db[peaks], spectrum_floor)
+        ax_mag.vlines(peak_freqs, ymin=spectrum_floor, ymax=peak_mags, color="red", linewidth=1.5, alpha=0.7)
+        
+        labeled_rows = rows[:n_labels]
+        labeled_rows = sorted(labeled_rows, key=lambda r: r["frequency_hz"])
+        for idx, row in enumerate(labeled_rows):
+            x = row["frequency_hz"]
+            y = max(float(np.interp(x, freqs, spectrum_db)), spectrum_floor)
+            label = (f"{row['frequency_hz']:.1f} Hz\n"
+                     f"{row['note_name']} {row['deviation_cents']:+.1f} c\n"
+                     f"{row['amplitude_db']:.1f} dB")
+            offsets = [(0, 14), (0, 24), (0, -14), (0, -24)]
+            ox, oy = offsets[idx % len(offsets)]
+            va = "bottom" if oy > 0 else "top"
+            ax_mag.annotate(label, xy=(x, y), xytext=(ox, oy), textcoords="offset points",
+                            fontsize=8, ha="center", va=va,
+                            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="gray", alpha=0.8),
+                            arrowprops=dict(arrowstyle="-", color="gray", lw=0.5))
+
+    ax_mag.set_xlim(0, min(max_freq, sr / 2.0))
+    ax_mag.set_ylim(bottom=spectrum_floor)
+    ax_mag.set_xlabel("Frequency (Hz)")
+    ax_mag.set_ylabel("Magnitude (dB)")
+    ax_mag.set_title("Averaged Spectrum with Detected Partials")
+
+    # --- Right subplot: table ---
+    ax_table = fig.add_subplot(gs[:, 1])
+    ax_table.axis('tight')
+    ax_table.axis('off')
+    if filename:
+        ax_table.set_title(f"Analysis Results: {filename}", fontsize=12, fontweight="bold", pad=20)
+
+    table_data = []
+    headers = ["N", "Freq", "dB", "Dur%", "Note", "Dev"]
+    for row in rows:
+        table_data.append([
+            str(row["peak_number"]),
+            f"{float(row['frequency_hz']):.1f}",
+            f"{float(row['amplitude_db']):.1f}",
+            f"{float(row['duration_percent']):.1f}",
+            str(row["note_name"]),
+            f"{float(row['deviation_cents']):+.1f}"
+        ])
+    
+    if table_data:
+        table = ax_table.table(cellText=table_data, colLabels=headers, loc='center', cellLoc='center')
+        table.auto_set_font_size(False)
+        table.set_fontsize(8)
+        table.scale(1, 1.2)
+
+    plt.tight_layout()
+
+    out_buf = io.BytesIO()
+    fig.savefig(out_buf, format='pdf', bbox_inches='tight', dpi=pdf_dpi)
+    plt.close(fig)
+    return out_buf.getvalue()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the analyzer CLI.
 
@@ -914,6 +1123,19 @@ def main(argv: list[str] | None = None) -> int:
         Exit code: 0 for success, 1 for general errors, 2 for empty signal
         after attack skip.
     """
+    if argv is None:
+        argv = sys.argv[1:]
+        
+    if len(argv) == 0:
+        import subprocess
+        print("No arguments provided. Launching GUI mode...", file=sys.stderr)
+        project_root = Path(__file__).resolve().parent
+        gui_path = project_root / "gui.py"
+        try:
+            subprocess.run([sys.executable, "-m", "streamlit", "run", str(gui_path)])
+            return 0
+        except KeyboardInterrupt:
+            return 0
     try:
         args = parse_args(argv)
     except RuntimeError as exc:
@@ -944,7 +1166,16 @@ def main(argv: list[str] | None = None) -> int:
             args.prominence,
             args.distance,
         )
-        rows = format_peaks(peaks, freqs, smoothed, args.peak_count)
+        # Compute spectrogram data for durations and visualization
+        spec_db, spec_times, spec_freqs = compute_stft(
+            decay_signal,
+            sr,
+            args.spec_nperseg,
+            args.spec_noverlap,
+            args.spec_nfft,
+        )
+        
+        rows = format_peaks(peaks, freqs, smoothed, args.peak_count, spec_db, spec_freqs, spec_times, args.spec_floor)
 
         visualization_requested = (
             args.visualize or args.spectrogram or args.plot_save is not None
@@ -962,9 +1193,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if not args.quiet:
             if args.format == "csv":
-                write_csv(rows, args.output)
+                write_csv(rows, args.output, input_path=args.input)
             else:
-                write_table(rows, args.output)
+                write_table(rows, args.output, input_path=args.input)
 
         return 0
     except RuntimeError as exc:
