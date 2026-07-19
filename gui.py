@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from analyze_bell import (
     load_audio,
     skip_attack,
+    find_transient_ms,
     compute_mean_spectrum,
     smooth_spectrum,
     detect_peaks,
@@ -30,8 +31,9 @@ from analyze_bell import (
 
 # Main title and description moved to sidebar
 
-st.sidebar.markdown("##### Bell Sample Overtone Analyzer")
+st.sidebar.markdown("##### [Bell Sample Overtone Analyzer](https://github.com/zemuro/bell-analyzer)")
 st.sidebar.caption("Analyze WAV files to extract and visualize spectral overtones and harmonic durations.")
+st.sidebar.caption("&copy; Ruslan Mazavin, 2026. Licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).")
 
 defaults = config_defaults()
 
@@ -44,8 +46,54 @@ wav_options = [str(p) for p in wav_files]
 
 selected_file = st.sidebar.selectbox("Sample:", wav_options)
 
+if "start_offset_ms" not in st.session_state:
+    st.session_state.start_offset_ms = 0.0
+if "last_file" not in st.session_state:
+    st.session_state.last_file = selected_file
+
+if st.session_state.last_file != selected_file:
+    st.session_state.start_offset_ms = 0.0
+    st.session_state.last_file = selected_file
+
 with st.sidebar.expander("Analysis Parameters", expanded=False):
-    attack_skip_ms = st.number_input("Skip (ms)", value=float(defaults["attack_skip_ms"]))
+    col1, col2 = st.columns([2, 1])
+    start_offset_ms = col1.number_input("Start Offset (ms)", value=float(st.session_state.start_offset_ms), step=1.0, format="%.1f")
+    st.session_state.start_offset_ms = start_offset_ms
+    
+    if col2.button("Auto-Detect"):
+        if selected_file:
+            tmp_data, tmp_sr = load_audio(Path(selected_file))
+            detected = find_transient_ms(tmp_data, tmp_sr)
+            st.session_state.start_offset_ms = detected
+            st.rerun()
+
+    attack_skip_ms = st.number_input("Attack Skip (ms)", value=float(defaults["attack_skip_ms"]))
+    
+    if selected_file:
+        try:
+            from matplotlib.figure import Figure
+            tmp_data, tmp_sr = load_audio(Path(selected_file))
+            end_ms = max(100.0, start_offset_ms + attack_skip_ms + 50.0)
+            end_sample = int((end_ms / 1000.0) * tmp_sr)
+            end_sample = min(end_sample, len(tmp_data))
+            
+            plot_data = tmp_data[:end_sample]
+            time_axis = np.linspace(0, end_ms, len(plot_data), endpoint=False)
+            
+            fig = Figure(figsize=(3, 3))
+            ax = fig.add_subplot(111)
+            ax.plot(time_axis, plot_data, color='black', linewidth=0.5)
+            ax.axvline(start_offset_ms, color='green', linestyle='--', linewidth=1.5, label='Start')
+            ax.axvline(start_offset_ms + attack_skip_ms, color='red', linestyle='--', linewidth=1.5, label='Attack End')
+            ax.set_title("Transient Window", fontsize=10)
+            ax.set_xlabel("Time (ms)", fontsize=8)
+            ax.tick_params(axis='both', which='major', labelsize=8)
+            ax.set_yticks([])
+            fig.tight_layout()
+            st.pyplot(fig)
+        except Exception:
+            pass
+
     min_freq = st.number_input("Min Freq (Hz)", value=float(defaults["min_freq"]))
     max_freq = st.number_input("Max Freq (Hz)", value=float(defaults["max_freq"]))
     prominence = st.number_input("Prominence", value=float(defaults["prominence"]), format="%.4f", step=0.001)
@@ -96,7 +144,7 @@ if selected_file:
         data, sr = load_audio(input_path)
         
         # Process the audio
-        decay_signal = skip_attack(data, sr, attack_skip_ms)
+        decay_signal = skip_attack(data, sr, attack_skip_ms, start_offset_ms=start_offset_ms)
         spectrum, freqs = compute_mean_spectrum(decay_signal, sr, fft_size, hop_size)
         smoothed = smooth_spectrum(spectrum, smoothing_window)
         peaks, _ = detect_peaks(smoothed, freqs, min_freq, max_freq, prominence, distance)
