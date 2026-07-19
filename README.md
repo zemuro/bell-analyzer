@@ -10,6 +10,7 @@ A powerful tool with a beautiful **Streamlit Web UI** for analyzing bell WAV sam
 - **Smart Transient Detection**: Automatically finds the exact start of a bell strike using a fast RMS energy window.
 - **Precision Audio Analysis**: Loads mono or stereo WAV files, skipping the initial noisy transient attack.
 - **Peak Detection**: Detects spectral peaks with configurable prominence, distance, and smoothing.
+- **Adaptive Visualizations**: Dynamic frequency scaling that automatically frames the lowest overtone, with a custom greedy collision-avoidance algorithm for peak labels ensuring clear readability on both linear and logarithmic scales.
 - **12-TET Mapping**: Maps each peak to the nearest 12-TET note and reports cent deviation.
 - **Export Options**: Export the analysis to CSV, MIDI (for synthesizers), and high-quality PDF reports with embedded rasterized spectrograms.
 - **Real-time Waveform View**: See exactly what part of the transient you are trimming directly in the sidebar.
