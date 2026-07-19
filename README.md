@@ -1,5 +1,7 @@
 # Bell Sample Overtone Analyzer
 
+![Bell Analyzer Screenshot](docs/screenshot.png)
+
 A powerful tool with a beautiful **Streamlit Web UI** for analyzing bell WAV samples. It extracts spectral overtones, visualizes harmonic durations, and allows you to easily export the results to PDF and MIDI.
 
 ## Features
