@@ -401,21 +401,59 @@ def load_audio(path: Path) -> tuple[np.ndarray, int]:
     return data, sr
 
 
-def skip_attack(data: np.ndarray, sr: int, attack_skip_ms: float) -> np.ndarray:
+def find_transient_ms(data: np.ndarray, sr: int, window_ms: float = 5.0, threshold_ratio: float = 0.05) -> float:
+    """Finds the start of the first transient using RMS energy.
+    
+    Args:
+        data: Input audio signal.
+        sr: Sample rate.
+        window_ms: RMS window length.
+        threshold_ratio: Threshold relative to maximum RMS.
+        
+    Returns:
+        Milliseconds until the first transient.
+    """
+    window_samples = int(round((window_ms / 1000.0) * sr))
+    if window_samples < 1:
+        window_samples = 1
+
+    if len(data) < window_samples:
+        return 0.0
+
+    squared = data ** 2
+    window = np.ones(window_samples) / window_samples
+    mean_squared = np.convolve(squared, window, mode='valid')
+    rms = np.sqrt(mean_squared)
+
+    max_rms = np.max(rms)
+    if max_rms == 0:
+        return 0.0
+    
+    threshold = max_rms * threshold_ratio
+    above_threshold = np.where(rms > threshold)[0]
+    
+    if len(above_threshold) > 0:
+        return float((above_threshold[0] / sr) * 1000.0)
+    return 0.0
+
+
+def skip_attack(data: np.ndarray, sr: int, attack_skip_ms: float, start_offset_ms: float = 0.0) -> np.ndarray:
     """Return the portion of the signal after the attack transient.
 
     Args:
         data: Input audio signal.
         sr: Sample rate in Hz.
-        attack_skip_ms: Duration to skip at the start in milliseconds.
+        attack_skip_ms: Duration to skip after the start offset.
+        start_offset_ms: Initial offset to trim leading silence.
 
     Returns:
-        Audio signal starting after the attack window.
+        Audio signal starting after the offset and attack window.
 
     Raises:
-        RuntimeError: If the attack skip is longer than the input signal.
+        RuntimeError: If the total skip is longer than the input signal.
     """
-    skip_samples = int(round((attack_skip_ms / 1000.0) * sr))
+    total_skip_ms = start_offset_ms + attack_skip_ms
+    skip_samples = int(round((total_skip_ms / 1000.0) * sr))
     if skip_samples >= len(data):
         duration_ms = len(data) / sr * 1000.0
         raise RuntimeError(
