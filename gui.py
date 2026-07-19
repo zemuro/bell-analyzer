@@ -159,13 +159,15 @@ with st.sidebar.expander("Advanced FFT Parameters", expanded=False):
         index=get_index(int(defaults["spec_nperseg"]), fft_options, 4),
         help="Length of each segment for the spectrogram's Short-Time Fourier Transform. Usually matches FFT Size."
     )
-    spec_noverlap = st.number_input("STFT Overlap", min_value=0, max_value=65536, value=int(defaults["spec_noverlap"]), step=256, help="Overlap between STFT segments. Higher overlap gives a smoother visual but takes longer to compute.")
+    spec_noverlap_val = min(int(defaults["spec_noverlap"]), spec_nperseg - 1)
+    spec_noverlap = st.number_input("STFT Overlap", min_value=0, max_value=spec_nperseg - 1, value=spec_noverlap_val, step=256, help="Overlap between STFT segments. Higher overlap gives a smoother visual but takes longer to compute. Must be strictly less than STFT Win Size.")
     
+    spec_nfft_options = [x for x in fft_options if x >= spec_nperseg]
     spec_nfft = st.selectbox(
         "STFT FFT Size",
-        options=fft_options,
-        index=get_index(int(defaults["spec_nfft"]), fft_options, 4),
-        help="Zero-padded FFT size for the spectrogram. Typically matches the STFT Window Size."
+        options=spec_nfft_options,
+        index=get_index(max(int(defaults["spec_nfft"]), spec_nperseg), spec_nfft_options, 0),
+        help="Zero-padded FFT size for the spectrogram. Must be greater than or equal to the STFT Window Size."
     )
 
 with st.sidebar.expander("Export Options", expanded=False):
