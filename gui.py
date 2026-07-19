@@ -139,8 +139,8 @@ with st.sidebar.expander("Analysis Parameters", expanded=False):
     st.markdown("##### Peak Detection Mode")
     peak_mode = st.selectbox(
         "Mode", 
-        ["Logarithmic (Musical)", "Linear (Mathematical)"], 
-        index=0 if defaults.get("peak_mode", "Logarithmic (Musical)") == "Logarithmic (Musical)" else 1,
+        ["Linear (Mathematical)", "Logarithmic (Musical)"], 
+        index=0 if defaults.get("peak_mode", "Linear (Mathematical)") == "Linear (Mathematical)" else 1,
         key="peak_mode",
         help="Logarithmic mode is much better for musical tuning and hearing. Linear is for strict mathematical signal processing."
     )
