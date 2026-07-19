@@ -570,7 +570,8 @@ def detect_peaks(
     min_freq: float,
     max_freq: float,
     prominence: float,
-    distance: int,
+    distance: float,
+    mode: str = "linear",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Detect spectral peaks within a frequency range.
 
@@ -579,8 +580,9 @@ def detect_peaks(
         freqs: Frequency axis corresponding to ``spectrum``.
         min_freq: Minimum peak frequency to report (Hz).
         max_freq: Maximum peak frequency to report (Hz).
-        prominence: Minimum peak prominence in magnitude units.
-        distance: Minimum number of bins between peaks.
+        prominence: Minimum peak prominence in magnitude units or dB (if log mode).
+        distance: Minimum number of bins (linear) or semitones (logarithmic) between peaks.
+        mode: "linear" or "logarithmic".
 
     Returns:
         Tuple of peak indices and their frequencies.
@@ -592,12 +594,44 @@ def detect_peaks(
     min_idx = valid_idx[0]
     max_idx = valid_idx[-1]
 
-    peaks, _ = find_peaks(
-        spectrum,
-        prominence=prominence,
-        distance=distance,
-    )
-    peaks = peaks[(peaks >= min_idx) & (peaks <= max_idx)]
+    if mode == "logarithmic":
+        # Logarithmic (Musical) Peak Detection
+        db_spectrum = 20.0 * np.log10(spectrum + 1e-12)
+        peaks, _ = find_peaks(db_spectrum, prominence=prominence)
+        
+        # Filter by frequency range
+        peaks = peaks[(peaks >= min_idx) & (peaks <= max_idx)]
+        
+        # Filter by semitone distance using greedy amplitude sorting
+        if len(peaks) > 0 and distance > 0:
+            # Sort by dB amplitude descending
+            sorted_peaks = peaks[np.argsort(db_spectrum[peaks])][::-1]
+            kept_peaks = []
+            
+            for p in sorted_peaks:
+                f_p = freqs[p]
+                conflict = False
+                for k in kept_peaks:
+                    f_k = freqs[k]
+                    # Avoid division by zero
+                    if f_k > 0 and f_p > 0:
+                        semitone_diff = abs(12.0 * np.log2(f_p / f_k))
+                        if semitone_diff < distance:
+                            conflict = True
+                            break
+                if not conflict:
+                    kept_peaks.append(p)
+            peaks = np.sort(np.array(kept_peaks, dtype=int))
+            
+    else:
+        # Linear (Mathematical) Peak Detection
+        peaks, _ = find_peaks(
+            spectrum,
+            prominence=prominence,
+            distance=int(distance),
+        )
+        peaks = peaks[(peaks >= min_idx) & (peaks <= max_idx)]
+
     return peaks, freqs[peaks]
 
 
