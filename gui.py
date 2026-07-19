@@ -39,12 +39,25 @@ defaults = config_defaults()
 
 st.sidebar.markdown("**1. Input**")
 
-# Find all wav files in samples/
-samples_dir = Path("samples")
-wav_files = list(samples_dir.glob("*.wav"))
+source_folder = st.sidebar.text_input("Source Folder", value="samples", help="Path can be absolute (e.g. C:/audio) or relative to the script root (e.g. samples).")
+samples_dir = Path(source_folder)
+if samples_dir.exists() and samples_dir.is_dir():
+    wav_files = list(samples_dir.glob("*.wav"))
+else:
+    wav_files = []
+    st.sidebar.warning(f"Folder '{source_folder}' not found.")
+    
 wav_options = [str(p) for p in wav_files]
 
 selected_file = st.sidebar.selectbox("Sample:", wav_options)
+
+uploaded_file = st.sidebar.file_uploader("Or Upload WAV", type=["wav"])
+if uploaded_file is not None:
+    samples_dir = Path("samples")
+    samples_dir.mkdir(exist_ok=True)
+    temp_path = samples_dir / uploaded_file.name
+    temp_path.write_bytes(uploaded_file.getvalue())
+    selected_file = str(temp_path)
 
 if "start_offset_ms" not in st.session_state:
     st.session_state.start_offset_ms = 0.0
