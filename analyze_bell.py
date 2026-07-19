@@ -420,7 +420,9 @@ def find_transient_ms(data: np.ndarray, sr: int, window_ms: float = 5.0, thresho
     if len(data) < window_samples:
         return 0.0
 
-    squared = data ** 2
+    # Remove DC offset to prevent silence from triggering the threshold
+    centered_data = data - np.mean(data)
+    squared = centered_data ** 2
     window = np.ones(window_samples) / window_samples
     mean_squared = np.convolve(squared, window, mode='valid')
     rms = np.sqrt(mean_squared)
