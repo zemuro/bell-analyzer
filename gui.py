@@ -72,8 +72,9 @@ with st.sidebar.expander("Analysis Parameters", expanded=False):
     col1, col2 = st.columns([2, 1])
     start_offset_ms = col1.number_input(
         "Start Offset (ms)", 
+        min_value=0.0,
         value=float(st.session_state.start_offset_ms), 
-        step=1.0, 
+        step=5.0, 
         format="%.1f",
         help="The starting time of the analysis window. Used to trim silence before the bell strike."
     )
@@ -88,7 +89,9 @@ with st.sidebar.expander("Analysis Parameters", expanded=False):
 
     attack_skip_ms = st.number_input(
         "Attack Skip (ms)", 
+        min_value=0.0,
         value=float(defaults["attack_skip_ms"]),
+        step=10.0,
         help="How much of the chaotic initial strike (transient) to skip over before analyzing the stable tonal decay."
     )
     
@@ -117,16 +120,21 @@ with st.sidebar.expander("Analysis Parameters", expanded=False):
         except Exception:
             pass
 
-    min_freq = st.number_input("Min Freq (Hz)", value=float(defaults["min_freq"]), help="Lower bound of frequencies to search for overtones.")
-    max_freq = st.number_input("Max Freq (Hz)", value=float(defaults["max_freq"]), help="Upper bound of frequencies to search for overtones.")
-    prominence = st.number_input("Prominence", value=float(defaults["prominence"]), format="%.4f", step=0.001, help="How much a spectral peak must stand out above the surrounding noise to be considered an overtone. Lower this if it misses quiet notes.")
-    distance = st.number_input("Min Bin Dist.", value=int(defaults["distance"]), help="Minimum number of FFT bins between two peaks. Increase this if a single note is incorrectly detected as multiple tiny peaks.")
-    smoothing_window = st.number_input("Smooth Win.", value=int(defaults["smoothing_window"]), help="Smooths the jagged spectrum before peak detection to avoid finding false peaks in noise. Must be an odd number.")
+    min_freq = st.number_input("Min Freq (Hz)", min_value=10.0, max_value=20000.0, value=float(defaults["min_freq"]), step=10.0, help="Lower bound of frequencies to search for overtones.")
+    max_freq = st.number_input("Max Freq (Hz)", min_value=100.0, max_value=24000.0, value=float(defaults["max_freq"]), step=100.0, help="Upper bound of frequencies to search for overtones.")
+    prominence = st.number_input("Prominence", min_value=0.0001, max_value=1.0, value=float(defaults["prominence"]), format="%.4f", step=0.001, help="How much a spectral peak must stand out above the surrounding noise to be considered an overtone. Lower this if it misses quiet notes.")
+    distance = st.number_input("Min Bin Dist.", min_value=1, max_value=2000, value=int(defaults["distance"]), step=5, help="Minimum number of FFT bins between two peaks. Increase this if a single note is incorrectly detected as multiple tiny peaks.")
+    
+    # Force odd smoothing window
+    smooth_default = int(defaults["smoothing_window"])
+    if smooth_default % 2 == 0:
+        smooth_default += 1
+    smoothing_window = st.number_input("Smooth Win.", min_value=3, max_value=999, value=smooth_default, step=2, help="Smooths the jagged spectrum before peak detection to avoid finding false peaks in noise. Must be an odd number.")
 
 with st.sidebar.expander("Display Options", expanded=False):
-    spectrum_floor = st.number_input("Spec. Floor (dB)", value=float(defaults["spectrum_floor"]), help="Sets the lowest visible dB level on the 1D spectrum plot. Lower this if peaks are cut off at the bottom.")
-    spec_floor = st.number_input("STFT Floor (dB)", value=float(defaults["spec_floor"]), help="Sets the lowest visible dB level on the 2D spectrogram. Raise this to filter out background noise in the visual.")
-    n_labels = st.number_input("Number of Labels", value=int(defaults["n_labels"]), help="Limit the number of text labels on the spectrum plot to avoid crowding.")
+    spectrum_floor = st.number_input("Spec. Floor (dB)", max_value=0.0, value=float(defaults["spectrum_floor"]), step=5.0, help="Sets the lowest visible dB level on the 1D spectrum plot. Lower this if peaks are cut off at the bottom.")
+    spec_floor = st.number_input("STFT Floor (dB)", max_value=0.0, value=float(defaults["spec_floor"]), step=5.0, help="Sets the lowest visible dB level on the 2D spectrogram. Raise this to filter out background noise in the visual.")
+    n_labels = st.number_input("Number of Labels", min_value=0, max_value=100, value=int(defaults["n_labels"]), step=1, help="Limit the number of text labels on the spectrum plot to avoid crowding.")
 
 with st.sidebar.expander("Advanced FFT Parameters", expanded=False):
     fft_options = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
@@ -143,7 +151,7 @@ with st.sidebar.expander("Advanced FFT Parameters", expanded=False):
         index=get_index(int(defaults["fft_size"]), fft_options, 6),
         help="Size of the FFT window. Higher values give better frequency resolution (pitch accuracy) but worse time resolution."
     )
-    hop_size = st.number_input("Hop Size", value=int(defaults["hop_size"]), step=512, help="Number of samples between successive FFT frames. Lower values give smoother time-based analysis but increase computation time.")
+    hop_size = st.number_input("Hop Size", min_value=64, max_value=65536, value=int(defaults["hop_size"]), step=256, help="Number of samples between successive FFT frames. Lower values give smoother time-based analysis but increase computation time.")
     
     spec_nperseg = st.selectbox(
         "STFT Win Size",
@@ -151,7 +159,7 @@ with st.sidebar.expander("Advanced FFT Parameters", expanded=False):
         index=get_index(int(defaults["spec_nperseg"]), fft_options, 4),
         help="Length of each segment for the spectrogram's Short-Time Fourier Transform. Usually matches FFT Size."
     )
-    spec_noverlap = st.number_input("STFT Overlap", value=int(defaults["spec_noverlap"]), step=512, help="Overlap between STFT segments. Higher overlap gives a smoother visual but takes longer to compute.")
+    spec_noverlap = st.number_input("STFT Overlap", min_value=0, max_value=65536, value=int(defaults["spec_noverlap"]), step=256, help="Overlap between STFT segments. Higher overlap gives a smoother visual but takes longer to compute.")
     
     spec_nfft = st.selectbox(
         "STFT FFT Size",
