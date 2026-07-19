@@ -325,8 +325,9 @@ if selected_file:
                 ax_mag.xaxis.set_major_formatter(ticker.ScalarFormatter())
                 
                 tick_locs = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
-                ax_spec.set_yticks(tick_locs)
-                ax_mag.set_xticks(tick_locs)
+                valid_ticks = [t for t in tick_locs if y_min <= t <= y_max]
+                ax_spec.set_yticks(valid_ticks)
+                ax_mag.set_xticks(valid_ticks)
                 
             plt.tight_layout()
             
