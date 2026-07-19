@@ -13,6 +13,7 @@ import soundfile as sf
 import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
+import json
 
 # Import the core logic from analyze_bell
 from analyze_bell import (
@@ -29,13 +30,24 @@ from analyze_bell import (
     generate_pdf_bytes,
 )
 
+defaults = config_defaults()
+USER_SETTINGS_FILE = Path("user_settings.json")
+if USER_SETTINGS_FILE.exists():
+    try:
+        with open(USER_SETTINGS_FILE, "r") as f:
+            user_defaults = json.load(f)
+            # Only update keys that exist in our defaults
+            for k in defaults:
+                if k in user_defaults:
+                    defaults[k] = user_defaults[k]
+    except Exception:
+        pass
+
 # Main title and description moved to sidebar
 
 st.sidebar.markdown("##### [Bell Sample Overtone Analyzer](https://github.com/zemuro/bell-analyzer)")
 st.sidebar.caption("Analyze WAV files to extract and visualize spectral overtones and harmonic durations.")
 st.sidebar.caption("&copy; Ruslan Mazavin, 2026. Licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).")
-
-defaults = config_defaults()
 
 st.sidebar.markdown("**1. Input**")
 
@@ -185,11 +197,29 @@ with st.sidebar.expander("Export Options", expanded=False):
     pdf_dpi = st.number_input("PDF Image DPI", min_value=50, max_value=600, value=150, step=10, key="pdf_dpi", help="Resolution of the spectrogram image embedded in the PDF. Lower this if the exported PDF file size is too large.")
 
 st.sidebar.markdown("---")
-if st.sidebar.button("Reset All Settings"):
-    for k in list(st.session_state.keys()):
-        if k != "last_file":
-            del st.session_state[k]
-    st.rerun()
+with st.sidebar.expander("Manage Settings Profiles", expanded=False):
+    if st.button("Save Current UI as Defaults", help="Saves your current slider/dropdown values so they load automatically next time."):
+        new_defaults = {}
+        for k in defaults.keys():
+            if k in st.session_state:
+                new_defaults[k] = st.session_state[k]
+        with open(USER_SETTINGS_FILE, "w") as f:
+            json.dump(new_defaults, f)
+        st.success("Saved to user_settings.json!")
+        
+    if st.button("Reset Current UI", help="Reverts all sliders back to your saved defaults."):
+        for k in list(st.session_state.keys()):
+            if k != "last_file":
+                del st.session_state[k]
+        st.rerun()
+        
+    if st.button("Restore Factory Defaults", help="Wipes your saved defaults and reverts to the original app settings."):
+        if USER_SETTINGS_FILE.exists():
+            USER_SETTINGS_FILE.unlink()
+        for k in list(st.session_state.keys()):
+            if k != "last_file":
+                del st.session_state[k]
+        st.rerun()
 
 if selected_file:
     try:
