@@ -299,10 +299,10 @@ if selected_file:
                 
                 if log_freq_scale:
                     log_span = np.log10(y_max) - np.log10(max(y_min, 1))
-                    min_dist = log_span * 0.12
+                    min_dist = log_span * 0.065
                 else:
                     span = y_max - y_min
-                    min_dist = span * 0.12
+                    min_dist = span * 0.065
                     
                 for row in labeled_rows:
                     x = row["frequency_hz"]
