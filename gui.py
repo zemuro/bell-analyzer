@@ -146,7 +146,7 @@ with st.sidebar.expander("Analysis Parameters", expanded=False):
     )
     
     if peak_mode == "Logarithmic (Musical)":
-        prominence = st.number_input("Prominence (dB)", min_value=0.1, max_value=100.0, value=float(defaults.get("prominence_log", 15.0)), step=1.0, key="prominence_log", help="How many dB a peak must stand out above the surrounding noise floor.")
+        prominence = st.number_input("Prominence (dB)", min_value=0.1, max_value=100.0, value=float(defaults.get("prominence_log", 10.0)), step=1.0, key="prominence_log", help="How many dB a peak must stand out above the surrounding noise floor.")
         distance = st.number_input("Min Dist (Semitones)", min_value=0.01, max_value=12.0, value=float(defaults.get("distance_log", 1.0)), step=0.1, key="distance_log", help="Minimum musical distance between peaks. E.g. 1.0 = one semitone apart.")
         mode_str = "logarithmic"
     else:
@@ -268,13 +268,14 @@ if selected_file:
             # Spectrogram
             ax_spec = axes[0]
             y_max = min(max_freq, sr / 2.0)
+            y_min = max(min_freq, np.min(freqs[peaks]) * 0.8) if len(peaks) > 0 else min_freq
             freq_mask = spec_freqs <= y_max
             spec_db_plot = np.maximum(spec_db, spec_floor)
             im = ax_spec.pcolormesh(
                 spec_times, spec_freqs[freq_mask], spec_db_plot[freq_mask, :],
                 shading="gouraud", cmap="magma", vmin=spec_floor, vmax=np.max(spec_db_plot)
             )
-            ax_spec.set_ylim(0, y_max)
+            ax_spec.set_ylim(y_min, y_max)
             ax_spec.set_xlabel("Time (s)")
             ax_spec.set_ylabel("Frequency (Hz)")
             ax_spec.set_title("STFT Spectrogram (decay segment)")
@@ -307,7 +308,7 @@ if selected_file:
                                     bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="gray", alpha=0.8),
                                     arrowprops=dict(arrowstyle="-", color="gray", lw=0.5))
                                     
-            ax_mag.set_xlim(min_freq, min(max_freq, sr / 2.0))
+            ax_mag.set_xlim(y_min, y_max)
             if len(peaks) > 0:
                 ax_mag.set_ylim(bottom=spectrum_floor, top=max(peak_mags) + 50)
             else:
